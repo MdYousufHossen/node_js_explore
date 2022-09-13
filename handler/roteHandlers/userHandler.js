@@ -1,5 +1,6 @@
 const { hash, perseJSON } = require('../../helpers/utilities');
 const data = require('../../lib/data');
+const tokenHandler = require('./tokenHandler');
 
 // module scaffolding
 const handler = {};
@@ -85,16 +86,28 @@ handler._users.get = (requestProperties, callback) => {
             : false;
 
     if (phone) {
-        // Lookup the user
-        data.read('users', phone, (error, u) => {
-            const user = { ...perseJSON(u) };
-            if (!error && user) {
-                delete user.password;
-                callback(200, user);
-            } else {
-                callback(404, {
-                    error: 'Requested user was not found!',
+        // verify token
+        const token =
+            typeof requestProperties.headersObject.token === 'string'
+                ? requestProperties.headersObject.token
+                : false;
+
+        tokenHandler._token.verify(token, phone, (tokenId) => {
+            if (tokenId) {
+                // Lookup the user
+                data.read('users', phone, (error, u) => {
+                    const user = { ...perseJSON(u) };
+                    if (!error && user) {
+                        delete user.password;
+                        callback(200, user);
+                    } else {
+                        callback(404, {
+                            error: 'Requested user was not found!',
+                        });
+                    }
                 });
+            } else {
+                callback(404, { error: 'Authentication failed!' });
             }
         });
     } else {
@@ -128,33 +141,46 @@ handler._users.put = (requestProperties, callback) => {
             : false;
     if (phone) {
         if (firstName || lastName || password) {
-            // lookup the user
-            data.read('users', phone, (error1, uData) => {
-                const userData = { ...perseJSON(uData) };
-                if (!error1 && userData) {
-                    if (firstName) {
-                        userData.firstName = firstName;
-                    }
-                    if (lastName) {
-                        userData.lastName = lastName;
-                    }
-                    if (password) {
-                        userData.password = hash(password);
-                    }
-                    // store to database
-                    data.update('users', phone, userData, (error2) => {
-                        if (!error2) {
-                            callback(200, {
-                                message: 'User was updated successfully!',
+            const token =
+                typeof requestProperties.headersObject.token === 'string'
+                    ? requestProperties.headersObject.token
+                    : false;
+
+            tokenHandler._token.verify(token, phone, (tokenId) => {
+                if (tokenId) {
+                    // lookup the user
+                    data.read('users', phone, (error1, uData) => {
+                        const userData = { ...perseJSON(uData) };
+                        if (!error1 && userData) {
+                            if (firstName) {
+                                userData.firstName = firstName;
+                            }
+                            if (lastName) {
+                                userData.lastName = lastName;
+                            }
+                            if (password) {
+                                userData.password = hash(password);
+                            }
+                            // store to database
+                            data.update('users', phone, userData, (error2) => {
+                                if (!error2) {
+                                    callback(200, {
+                                        message: 'User was updated successfully!',
+                                    });
+                                } else {
+                                    callback(500, {
+                                        error: 'There was a proble in the server side!',
+                                    });
+                                }
                             });
                         } else {
-                            callback(500, { error: 'There was a proble in the server side!' });
+                            callback(400, {
+                                error: 'Phone number is not matched!',
+                            });
                         }
                     });
                 } else {
-                    callback(400, {
-                        error: 'Phone number is not matched!',
-                    });
+                    callback(404, { error: 'Authentication failed!' });
                 }
             });
         } else {
@@ -174,25 +200,36 @@ handler._users.delete = (requestProperties, callback) => {
             : false;
 
     if (phone) {
-        // lookup the user
+        // verify token.......
+        const token =
+            typeof requestProperties.headersObject.token === 'string'
+                ? requestProperties.headersObject.token
+                : false;
 
-        data.read('users', phone, (error1, userData) => {
-            if (!error1 && userData) {
-                data.delete('users', phone, (error2) => {
-                    if (!error2) {
-                        callback(200, {
-                            message: 'User was successfully deleted!',
+        tokenHandler._token.verify(token, phone, (tokenId) => {
+            if (tokenId) {
+                // lookup the user
+                data.read('users', phone, (error1, userData) => {
+                    if (!error1 && userData) {
+                        data.delete('users', phone, (error2) => {
+                            if (!error2) {
+                                callback(200, {
+                                    message: 'User was successfully deleted!',
+                                });
+                            } else {
+                                callback(500, {
+                                    error: 'There was a server side error!',
+                                });
+                            }
                         });
                     } else {
                         callback(500, {
-                            error: 'There was a server side error!',
+                            error: 'Phone number did not matched!',
                         });
                     }
                 });
             } else {
-                callback(500, {
-                    error: 'Phone number did not matched!',
-                });
+                callback(404, { error: 'Authentication failed!' });
             }
         });
     } else {
